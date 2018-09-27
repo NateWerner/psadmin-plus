@@ -311,7 +311,13 @@ def do_start(type, domain)
         when "tux", "app", "all"
             do_cmd(start_app_service_cmd)
         else
-            do_cmd(start_app_cmd)
+            exitCode = do_cmd(start_app_cmd)
+            if "#{exitCode}" == "255"
+              # config state error
+              do_configure(type, domain)
+              # try again
+              exitCode = do_cmd(start_app_cmd)
+            end
             case "#{PS_TRAIL_SERVICE}"
             when "true"
                 do_cmd(start_app_service_cmd)
