@@ -3,6 +3,7 @@
 require 'rbconfig'
 require 'etc'
 require 'open3'
+require 'timeout'
 
 def do_help
     puts "Usage: psa [command] <type> <domain>"
@@ -53,6 +54,39 @@ def env(var)
    result = "#{OS_CONST}" == "linux" ? "${#{var}}" : "%#{var}%"
 end
 
+def do_cmd_with_timeout(cmd, timeout)
+  begin
+    # stdout, stderr pipes
+    rout, wout = IO.pipe
+    rerr, werr = IO.pipe
+    stdout, stderr = nil
+
+    pid = Process.spawn(cmd, pgroup: true, :out => wout, :err => werr)
+
+    Timeout.timeout(timeout) do
+      Process.waitpid(pid)
+
+      # close write ends so we can read from them
+      wout.close
+      werr.close
+
+      stdout = rout.readlines.join
+      stderr = rerr.readlines.join
+    end
+
+  rescue Timeout::Error
+    Process.kill(-9, pid)
+    Process.detach(pid)
+  ensure
+    wout.close unless wout.closed?
+    werr.close unless werr.closed?
+    # dispose the read ends of the pipes
+    rout.close
+    rerr.close
+  end
+  p "#{stdout} #{stderr}"
+end
+
 def do_cmd(cmd, print = true, powershell = true)
     case "#{OS_CONST}"
     when "linux"
@@ -61,7 +95,8 @@ def do_cmd(cmd, print = true, powershell = true)
             when "true"
                 p "Command: #{cmd}"
             end
-            out = `#{cmd}`
+            out = do_cmd_with_timeout(cmd, 360)
+            
         else
             if "#{PS_PSA_SUDO}" == "on"
                 case "#{PS_PSA_DEBUG}"
